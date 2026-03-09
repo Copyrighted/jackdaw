@@ -72,7 +72,10 @@ fn draw_face_grids(
     mut gizmos: Gizmos<FaceGridGizmoGroup>,
     settings: Res<OverlaySettings>,
     snap: Res<SnapSettings>,
-    brushes: Query<(&Brush, &BrushMeshCache, &GlobalTransform, Has<Selected>), Without<CutPreviewHidden>>,
+    brushes: Query<
+        (&Brush, &BrushMeshCache, &GlobalTransform, Has<Selected>),
+        Without<CutPreviewHidden>,
+    >,
 ) {
     if !settings.show_face_grid {
         return;

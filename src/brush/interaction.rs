@@ -1499,8 +1499,7 @@ pub(super) fn handle_clip_mode(
             let world_point = brush_global.transform_point(point);
             let ctrl = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
             let snapped = snap_settings.snap_translate_vec3_if(world_point, ctrl);
-            let (_, brush_rot, brush_trans) =
-                brush_global.to_scale_rotation_translation();
+            let (_, brush_rot, brush_trans) = brush_global.to_scale_rotation_translation();
             point = brush_rot.inverse() * (snapped - brush_trans);
             clip_state.points.push(point);
         }
@@ -1604,8 +1603,7 @@ pub(super) fn handle_clip_mode(
 
                     // Spawn back half as new entity
                     let back_brush = back;
-                    let (_, brush_rot, brush_trans) =
-                        brush_global.to_scale_rotation_translation();
+                    let (_, brush_rot, brush_trans) = brush_global.to_scale_rotation_translation();
                     let spawn_transform = Transform {
                         translation: brush_trans,
                         rotation: brush_rot,
@@ -1745,10 +1743,6 @@ pub(super) fn handle_clip_mode(
             ClipMode::KeepBack => -world_normal,
             _ => world_normal,
         };
-        gizmos.arrow(
-            center,
-            center + arrow_dir * 0.5,
-            Color::srgb(1.0, 0.3, 0.3),
-        );
+        gizmos.arrow(center, center + arrow_dir * 0.5, Color::srgb(1.0, 0.3, 0.3));
     }
 }

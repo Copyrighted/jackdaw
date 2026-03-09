@@ -1,9 +1,9 @@
 use crate::EditorEntity;
+use crate::asset_browser::ClearTextureFromFaces;
 use crate::brush::{
     Brush, BrushEditMode, BrushFaceData, BrushSelection, EditMode, SetBrush, TextureMaterialCache,
 };
 use crate::commands::CommandHistory;
-use crate::asset_browser::ClearTextureFromFaces;
 
 use bevy::prelude::*;
 use jackdaw_feathers::{

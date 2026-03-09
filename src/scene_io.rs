@@ -258,8 +258,7 @@ fn finish_load_scene(world: &mut World, chosen: &std::path::Path) {
 
         // Merge embedded material definitions into the library
         if !jsn.assets.material_definitions.is_empty() {
-            let mut library =
-                world.resource_mut::<crate::material_definition::MaterialLibrary>();
+            let mut library = world.resource_mut::<crate::material_definition::MaterialLibrary>();
             for jsn_def in &jsn.assets.material_definitions {
                 // Don't overwrite existing definitions with the same name
                 if library.get_by_name(&jsn_def.name).is_some() {

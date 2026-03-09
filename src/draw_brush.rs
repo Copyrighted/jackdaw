@@ -22,8 +22,7 @@ use crate::{
 };
 use jackdaw_geometry::{
     brush_planes_to_world, brushes_intersect, clean_degenerate_faces, compute_brush_geometry,
-    compute_face_tangent_axes, compute_face_uvs, subtract_brush,
-    triangulate_face,
+    compute_face_tangent_axes, compute_face_uvs, subtract_brush, triangulate_face,
 };
 use jackdaw_jsn::{Brush, BrushFaceData, BrushPlane};
 
@@ -125,10 +124,7 @@ impl Plugin for DrawBrushPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DrawBrushState>()
             .init_gizmo_group::<DrawBrushGizmoGroup>()
-            .add_systems(
-                Startup,
-                configure_draw_brush_gizmos,
-            )
+            .add_systems(Startup, configure_draw_brush_gizmos)
             .add_systems(
                 Update,
                 (

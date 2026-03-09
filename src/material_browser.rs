@@ -304,7 +304,11 @@ fn update_preview_area(
         let slots: &[(&str, &str, &Option<String>)] = &[
             ("Base Color", "base_color", &def.base_color_texture),
             ("Normal", "normal", &def.normal_map_texture),
-            ("Metal/Rough", "metallic_roughness", &def.metallic_roughness_texture),
+            (
+                "Metal/Rough",
+                "metallic_roughness",
+                &def.metallic_roughness_texture,
+            ),
             ("Roughness", "roughness", &def.roughness_texture),
             ("Metallic", "metallic", &def.metallic_texture),
             ("Emissive", "emissive", &def.emissive_texture),
@@ -312,10 +316,7 @@ fn update_preview_area(
             ("Depth", "depth", &def.depth_texture),
         ];
         for &(label, slot_id, tex) in slots {
-            let display = tex
-                .as_deref()
-                .unwrap_or("None")
-                .to_string();
+            let display = tex.as_deref().unwrap_or("None").to_string();
 
             let row = commands
                 .spawn((
@@ -695,7 +696,6 @@ fn update_material_browser_ui(
                 }
             },
         );
-
     }
 }
 
@@ -786,10 +786,7 @@ pub fn material_browser_panel(icon_font: Handle<Font>) -> impl Bundle {
             // Filter input
             (
                 Node {
-                    padding: UiRect::axes(
-                        Val::Px(tokens::SPACING_SM),
-                        Val::Px(tokens::SPACING_XS),
-                    ),
+                    padding: UiRect::axes(Val::Px(tokens::SPACING_SM), Val::Px(tokens::SPACING_XS),),
                     flex_shrink: 0.0,
                     ..Default::default()
                 },

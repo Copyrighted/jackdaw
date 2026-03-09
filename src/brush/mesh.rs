@@ -163,7 +163,9 @@ fn load_material_image(
 ) -> Option<Handle<Image>> {
     let abs_path = assets_dir.join(path);
     // Pre-check: skip KTX2 cubemaps before decoding
-    if abs_path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ktx2"))
+    if abs_path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("ktx2"))
         && is_ktx2_non_2d(&abs_path)
     {
         return None;
@@ -353,8 +355,16 @@ pub(super) fn ensure_material_definitions(
             emissive_texture,
             occlusion_texture,
             depth_map,
-            metallic: if has_metallic_roughness_texture { 1.0 } else { def.metallic },
-            perceptual_roughness: if has_metallic_roughness_texture { 1.0 } else { def.perceptual_roughness },
+            metallic: if has_metallic_roughness_texture {
+                1.0
+            } else {
+                def.metallic
+            },
+            perceptual_roughness: if has_metallic_roughness_texture {
+                1.0
+            } else {
+                def.perceptual_roughness
+            },
             reflectance: def.reflectance,
             emissive: if def.emissive_intensity > 0.0 {
                 LinearRgba::WHITE * def.emissive_intensity

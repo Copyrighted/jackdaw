@@ -751,10 +751,7 @@ fn extract_array_layers(
     let Ok(bytes) = std::fs::read(path) else {
         return;
     };
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("ktx2");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("ktx2");
     let Ok(image) = Image::from_buffer(
         &bytes,
         ImageType::Extension(ext),
@@ -1016,13 +1013,13 @@ fn update_preview_panel(
             TextColor(tokens::TEXT_PRIMARY),
             ChildOf(apply_btn),
         ));
-        commands.entity(apply_btn).observe(
-            move |_: On<Pointer<Click>>, mut commands: Commands| {
+        commands
+            .entity(apply_btn)
+            .observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
                 if let Some(relative) = to_asset_relative_path(&path_str) {
                     commands.trigger(ApplyTextureToFaces { path: relative });
                 }
-            },
-        );
+            });
         commands.entity(apply_btn).observe(
             |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
                 if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
