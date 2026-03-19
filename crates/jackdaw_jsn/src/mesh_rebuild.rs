@@ -1,4 +1,10 @@
 use bevy::{
+    asset::RenderAssetUsages,
+    image::{
+        CompressedImageFormats, ImageAddressMode, ImageFilterMode, ImageSampler,
+        ImageSamplerDescriptor, ImageType,
+    },
+    math::Affine2,
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
@@ -10,11 +16,12 @@ use jackdaw_geometry::{
 
 /// Simplified runtime mesh rebuild for consumers (no editor material palette,
 /// no BrushFaceEntity, no texture cache — just a single mesh child per brush).
-pub(crate) fn rebuild_brush_meshes(
+pub fn rebuild_brush_meshes(
     mut commands: Commands,
     new_brushes: Query<(Entity, &Brush), Added<Brush>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     for (entity, brush) in &new_brushes {
         let (vertices, face_polygons) = compute_brush_geometry(&brush.faces);
@@ -81,8 +88,32 @@ pub(crate) fn rebuild_brush_meshes(
         mesh.insert_indices(Indices::U32(all_indices));
 
         let mesh_handle = meshes.add(mesh);
+
+        let grid_bytes = include_bytes!("../../../assets/textures/jd_grid.png");
+        let grid_image = Image::from_buffer(
+            grid_bytes,
+            ImageType::Extension("png"),
+            CompressedImageFormats::NONE,
+            true,
+            ImageSampler::Descriptor(ImageSamplerDescriptor {
+                mag_filter: ImageFilterMode::Nearest,
+                min_filter: ImageFilterMode::Nearest,
+                mipmap_filter: ImageFilterMode::Nearest,
+                address_mode_u: ImageAddressMode::Repeat,
+                address_mode_v: ImageAddressMode::Repeat,
+                address_mode_w: ImageAddressMode::Repeat,
+                ..default()
+            }),
+            RenderAssetUsages::default(),
+        )
+        .expect("Failed to decode jd_grid.png");
+        let grid_handle = images.add(grid_image);
+
         let material = materials.add(StandardMaterial {
-            base_color: Color::srgb(0.7, 0.7, 0.7),
+            base_color: Color::WHITE,
+            base_color_texture: Some(grid_handle),
+            alpha_mode: AlphaMode::Opaque,
+            uv_transform: Affine2::from_scale(Vec2::splat(2.0)),
             ..default()
         });
 

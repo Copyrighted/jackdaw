@@ -238,7 +238,7 @@ pub fn brushes_intersect(a_faces: &[BrushFaceData], b_faces: &[BrushFaceData]) -
     for face in a_faces {
         let n = face.plane.normal;
         let d = face.plane.distance;
-        if b_verts.iter().all(|v| n.dot(*v) > d + EPSILON) {
+        if b_verts.iter().all(|v| n.dot(*v) > d - EPSILON) {
             return false;
         }
     }
@@ -246,7 +246,7 @@ pub fn brushes_intersect(a_faces: &[BrushFaceData], b_faces: &[BrushFaceData]) -
     for face in b_faces {
         let n = face.plane.normal;
         let d = face.plane.distance;
-        if a_verts.iter().all(|v| n.dot(*v) > d + EPSILON) {
+        if a_verts.iter().all(|v| n.dot(*v) > d - EPSILON) {
             return false;
         }
     }

@@ -1,4 +1,10 @@
 use bevy::{
+    asset::RenderAssetUsages,
+    image::{
+        CompressedImageFormats, ImageAddressMode, ImageFilterMode, ImageSampler,
+        ImageSamplerDescriptor, ImageType,
+    },
+    math::Affine2,
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
@@ -6,12 +12,14 @@ use bevy::{
 use super::{BrushFaceEntity, BrushMaterialPalette, BrushMeshCache, BrushPreview};
 use crate::NonSerializable;
 use crate::draw_brush::DrawBrushState;
+use crate::selection::Selected;
 use jackdaw_geometry::{
     compute_brush_geometry, compute_face_tangent_axes, compute_face_uvs, triangulate_face,
 };
 
 pub(super) fn setup_default_materials(
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     mut palette: ResMut<BrushMaterialPalette>,
 ) {
     let defaults = [
@@ -37,6 +45,52 @@ pub(super) fn setup_default_materials(
                 ..default()
             }));
     }
+
+    // Create grid-textured default materials with nearest-neighbor sampling
+    let grid_bytes = include_bytes!("../../assets/textures/jd_grid.png");
+    let grid_image = Image::from_buffer(
+        grid_bytes,
+        ImageType::Extension("png"),
+        CompressedImageFormats::NONE,
+        true,
+        ImageSampler::Descriptor(ImageSamplerDescriptor {
+            mag_filter: ImageFilterMode::Nearest,
+            min_filter: ImageFilterMode::Nearest,
+            mipmap_filter: ImageFilterMode::Nearest,
+            address_mode_u: ImageAddressMode::Repeat,
+            address_mode_v: ImageAddressMode::Repeat,
+            address_mode_w: ImageAddressMode::Repeat,
+            ..default()
+        }),
+        RenderAssetUsages::default(),
+    )
+    .expect("Failed to decode jd_grid.png");
+    let grid_handle = images.add(grid_image);
+
+    // Tile the 2×2 checker at 0.25 world-unit spacing (matching default grid)
+    let uv_tile = Affine2::from_scale(Vec2::splat(2.0));
+
+    palette.default_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE.with_alpha(0.50),
+        base_color_texture: Some(grid_handle.clone()),
+        alpha_mode: AlphaMode::Blend,
+        uv_transform: uv_tile,
+        ..default()
+    });
+    palette.default_selected_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE.with_alpha(0.90),
+        base_color_texture: Some(grid_handle.clone()),
+        alpha_mode: AlphaMode::Blend,
+        uv_transform: uv_tile,
+        ..default()
+    });
+    palette.default_preview_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE.with_alpha(0.75),
+        base_color_texture: Some(grid_handle),
+        alpha_mode: AlphaMode::Blend,
+        uv_transform: uv_tile,
+        ..default()
+    });
 }
 
 pub fn regenerate_brush_meshes(
@@ -47,6 +101,7 @@ pub fn regenerate_brush_meshes(
             &super::Brush,
             Option<&Children>,
             Option<&super::BrushPreview>,
+            Has<Selected>,
         ),
         Changed<super::Brush>,
     >,
@@ -54,9 +109,8 @@ pub fn regenerate_brush_meshes(
     mut meshes: ResMut<Assets<Mesh>>,
     palette: Res<BrushMaterialPalette>,
 ) {
-    for (entity, brush, children, preview) in &changed_brushes {
-        // Despawn all Mesh3d children — covers both BrushFaceEntity children
-        // from previous regen cycles and the runtime mesh child from JsnPlugin.
+    for (entity, brush, children, preview, is_selected) in &changed_brushes {
+        // Despawn all Mesh3d children from previous regen cycles.
         if let Some(children) = children {
             for child in children.iter() {
                 if mesh3d_query.get(child).is_ok() {
@@ -115,16 +169,15 @@ pub fn regenerate_brush_meshes(
 
             let mesh_handle = meshes.add(mesh);
 
-            // Use the face's material handle if set, otherwise fall back to palette
+            // Use the face's material handle if set, otherwise fall back to grid default
             let material = if face_data.material != Handle::default() {
                 face_data.material.clone()
+            } else if preview.is_some() {
+                palette.default_preview_material.clone()
+            } else if is_selected {
+                palette.default_selected_material.clone()
             } else {
-                let mats = if preview.is_some() {
-                    &palette.preview_materials
-                } else {
-                    &palette.materials
-                };
-                mats.first().cloned().unwrap_or_default()
+                palette.default_material.clone()
             };
 
             let face_entity = commands
@@ -184,69 +237,43 @@ pub(super) fn sync_brush_preview(
     }
 }
 
-/// When `BrushPreview` is added or removed, swap materials on existing face entities
-/// without requiring a full mesh regeneration.
-pub(super) fn apply_brush_preview_materials(
-    mut commands: Commands,
+/// Every frame, ensure each brush face entity has the correct default-palette material
+/// based on preview / selected state.  Uses direct mutation (no deferred commands) so
+/// swaps are visible immediately.
+pub(super) fn ensure_brush_face_materials(
     palette: Res<BrushMaterialPalette>,
-    added: Query<(Entity, &BrushMeshCache), Added<BrushPreview>>,
-    mut removed: RemovedComponents<BrushPreview>,
-    brush_query: Query<&BrushMeshCache>,
-    face_query: Query<&BrushFaceEntity>,
+    brushes: Query<(Entity, &BrushMeshCache, Has<BrushPreview>, Has<Selected>), With<super::Brush>>,
     brush_data: Query<&super::Brush>,
+    mut face_mats: Query<(&BrushFaceEntity, &mut MeshMaterial3d<StandardMaterial>)>,
 ) {
-    for (entity, cache) in &added {
-        swap_face_materials(
-            &mut commands,
-            entity,
-            cache,
-            &palette.preview_materials,
-            &face_query,
-            &brush_data,
-        );
-    }
-
-    for entity in removed.read() {
-        if let Ok(cache) = brush_query.get(entity) {
-            swap_face_materials(
-                &mut commands,
-                entity,
-                cache,
-                &palette.materials,
-                &face_query,
-                &brush_data,
-            );
-        }
-    }
-}
-
-fn swap_face_materials(
-    commands: &mut Commands,
-    brush_entity: Entity,
-    cache: &BrushMeshCache,
-    target_materials: &[Handle<StandardMaterial>],
-    face_query: &Query<&BrushFaceEntity>,
-    brush_data: &Query<&super::Brush>,
-) {
-    let Ok(brush) = brush_data.get(brush_entity) else {
-        return;
-    };
-
-    for &face_entity in &cache.face_entities {
-        if face_entity == Entity::PLACEHOLDER {
-            continue;
-        }
-        let Ok(face) = face_query.get(face_entity) else {
+    for (entity, cache, has_preview, is_selected) in &brushes {
+        let target = if has_preview {
+            &palette.default_preview_material
+        } else if is_selected {
+            &palette.default_selected_material
+        } else {
+            &palette.default_material
+        };
+        let Ok(brush) = brush_data.get(entity) else {
             continue;
         };
-        let Some(face_data) = brush.faces.get(face.face_index) else {
-            continue;
-        };
-        // Only swap faces that use the default palette (no explicit material)
-        if face_data.material != Handle::default() {
-            continue;
+        for &face_entity in &cache.face_entities {
+            if face_entity == Entity::PLACEHOLDER {
+                continue;
+            }
+            let Ok((face, mut mat)) = face_mats.get_mut(face_entity) else {
+                continue;
+            };
+            let Some(face_data) = brush.faces.get(face.face_index) else {
+                continue;
+            };
+            // Only touch faces that use the default palette (no explicit material)
+            if face_data.material != Handle::default() {
+                continue;
+            }
+            if mat.0 != *target {
+                mat.0 = target.clone();
+            }
         }
-        let mat = target_materials.first().cloned().unwrap_or_default();
-        commands.entity(face_entity).insert(MeshMaterial3d(mat));
     }
 }

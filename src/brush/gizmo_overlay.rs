@@ -19,8 +19,41 @@ pub(super) fn draw_brush_edit_gizmos(
     vertex_drag: Res<VertexDragState>,
     edge_drag: Res<EdgeDragState>,
     face_drag: Res<BrushDragState>,
+    hover: Res<super::BrushFaceHover>,
     mut gizmos: Gizmos,
 ) {
+    // Draw hover face outline (works in both Object and Edit modes)
+    if let (Some(hover_entity), Some(hover_face)) = (hover.entity, hover.face_index) {
+        if let Ok(cache) = brush_caches.get(hover_entity) {
+            if let Ok(brush_global) = brush_transforms.get(hover_entity) {
+                let polygon = &cache.face_polygons[hover_face];
+                if polygon.len() >= 3 {
+                    // Skip if face is already selected (avoid double highlight)
+                    let is_selected = brush_selection.faces.contains(&hover_face)
+                        && brush_selection.entity == Some(hover_entity);
+                    if !is_selected {
+                        let color = match hover.intent {
+                            super::HoverIntent::PushPull => {
+                                Color::srgba(1.0, 0.8, 0.0, 0.9) // yellow
+                            }
+                            super::HoverIntent::Extend => {
+                                Color::srgba(1.0, 0.5, 0.0, 0.9) // orange
+                            }
+                        };
+                        for i in 0..polygon.len() {
+                            let a =
+                                brush_global.transform_point(cache.vertices[polygon[i]]);
+                            let b = brush_global.transform_point(
+                                cache.vertices[polygon[(i + 1) % polygon.len()]],
+                            );
+                            gizmos.line(a, b, color);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let EditMode::BrushEdit(mode) = *edit_mode else {
         return;
     };
@@ -164,3 +197,4 @@ pub(super) fn draw_brush_edit_gizmos(
         }
     }
 }
+

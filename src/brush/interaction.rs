@@ -101,7 +101,6 @@ pub(super) fn handle_edit_mode_keys(
                 brush_selection.faces.clear();
                 brush_selection.vertices.clear();
                 brush_selection.edges.clear();
-                brush_selection.temporary_mode = false;
             }
         } else {
             // From Object mode: enter edit on primary if it's a brush
@@ -111,7 +110,6 @@ pub(super) fn handle_edit_mode_keys(
                 brush_selection.faces.clear();
                 brush_selection.vertices.clear();
                 brush_selection.edges.clear();
-                brush_selection.temporary_mode = false;
             }
         }
         return;
@@ -158,7 +156,6 @@ pub(super) fn brush_face_interact(
     let in_face_edit = matches!(*edit_mode, EditMode::BrushEdit(BrushEditMode::Face));
 
     // PageUp/PageDown: nudge selected face vertices vertically (gabling)
-    // Handled before temporary_mode exit so keyboard nudges work regardless of shift state.
     if in_face_edit
         && !drag_state.active
         && drag_state.pending.is_none()
@@ -173,9 +170,6 @@ pub(super) fn brush_face_interact(
                 None
             };
             if let Some(dir) = nudge_dir {
-                // Commit to face mode if we were in temporary mode
-                brush_selection.temporary_mode = false;
-
                 let grid = snap_settings.grid_size();
                 if let Ok(cache) = brush_caches.get(brush_entity) {
                     if let Ok((mut brush, _)) = brushes.get_mut(brush_entity) {
@@ -223,24 +217,11 @@ pub(super) fn brush_face_interact(
         }
     }
 
-    // Temporary face mode: exit when shift is released and no drag is active
-    if in_face_edit && brush_selection.temporary_mode {
-        let shift = keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-        if !shift && !drag_state.active && drag_state.pending.is_none() {
-            *edit_mode = EditMode::Object;
-            brush_selection.entity = None;
-            brush_selection.faces.clear();
-            brush_selection.vertices.clear();
-            brush_selection.edges.clear();
-            brush_selection.temporary_mode = false;
-            return;
-        }
-    }
-
     if !in_face_edit && drag_state.pending.is_none() && !drag_state.active {
-        // Not in face mode — only handle Shift+click or Ctrl+Shift+click to enter face edit
+        // Not in face mode — Shift+click or Alt+click enters quick face edit
         let shift = keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-        if !shift || !mouse.just_pressed(MouseButton::Left) {
+        let alt = keyboard.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
+        if !(shift || alt) || !mouse.just_pressed(MouseButton::Left) {
             return;
         }
         // Fall through to face picking below
@@ -264,8 +245,8 @@ pub(super) fn brush_face_interact(
         return;
     };
 
-    let shift = keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let ctrl = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
+    let alt = keyboard.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
 
     // Cancel active drag on Escape or right-click
     if drag_state.active {
@@ -291,6 +272,14 @@ pub(super) fn brush_face_interact(
             drag_state.pending = None;
             drag_state.extend_face_polygon.clear();
             drag_state.extend_depth = 0.0;
+            if drag_state.quick_action {
+                *edit_mode = EditMode::Object;
+                brush_selection.entity = None;
+                brush_selection.faces.clear();
+                brush_selection.vertices.clear();
+                brush_selection.edges.clear();
+                drag_state.quick_action = false;
+            }
             return;
         }
     }
@@ -330,7 +319,16 @@ pub(super) fn brush_face_interact(
             drag_state.extend_face_polygon.clear();
             drag_state.extend_depth = 0.0;
         }
+        let was_quick = drag_state.quick_action;
         drag_state.pending = None;
+        if was_quick {
+            *edit_mode = EditMode::Object;
+            brush_selection.entity = None;
+            brush_selection.faces.clear();
+            brush_selection.vertices.clear();
+            brush_selection.edges.clear();
+            drag_state.quick_action = false;
+        }
         return;
     }
 
@@ -539,11 +537,11 @@ pub(super) fn brush_face_interact(
             brush_selection.faces.clear();
             brush_selection.vertices.clear();
             brush_selection.edges.clear();
-            brush_selection.temporary_mode = true;
+            drag_state.quick_action = true;
         }
 
-        if in_face_edit && ctrl && !shift {
-            // Ctrl+click in face mode: toggle multi-select, no drag
+        if in_face_edit && ctrl {
+            // Ctrl+click in face mode: toggle multi-select (no drag)
             if let Some(pos) = brush_selection.faces.iter().position(|&f| f == face_idx) {
                 brush_selection.faces.remove(pos);
             } else {
@@ -552,22 +550,17 @@ pub(super) fn brush_face_interact(
         } else {
             brush_selection.faces = vec![face_idx];
             // Determine extrude mode:
-            // - From object mode: Shift+click = Merge, Ctrl+Shift+click = Extend
-            // - In face mode: plain drag = Merge, Shift+drag = Extend
+            // - From Object mode: Shift = Merge (push/pull), Alt = Extend (new brush)
+            // - In face mode: plain drag = Merge
             if !in_face_edit {
-                // Entering from object mode via Shift+click
-                drag_state.extrude_mode = if ctrl && shift {
+                drag_state.extrude_mode = if alt {
                     FaceExtrudeMode::Extend
                 } else {
                     FaceExtrudeMode::Merge
                 };
             } else {
-                // Already in face mode
-                drag_state.extrude_mode = if shift {
-                    FaceExtrudeMode::Extend
-                } else {
-                    FaceExtrudeMode::Merge
-                };
+                drag_state.extrude_mode = FaceExtrudeMode::Merge;
+                drag_state.quick_action = false;
             }
             // Record pending drag
             drag_state.pending = Some(PendingSubDrag {
@@ -575,8 +568,12 @@ pub(super) fn brush_face_interact(
             });
         }
     } else if in_face_edit && !ctrl {
-        // Click away from any face: clear selection
+        // Click outside any face: exit to Object mode
+        *edit_mode = EditMode::Object;
+        brush_selection.entity = None;
         brush_selection.faces.clear();
+        brush_selection.vertices.clear();
+        brush_selection.edges.clear();
     }
 }
 
@@ -668,7 +665,7 @@ fn spawn_extruded_brush(
 }
 
 pub(super) fn brush_vertex_interact(
-    edit_mode: Res<EditMode>,
+    mut edit_mode: ResMut<EditMode>,
     mouse: Res<ButtonInput<MouseButton>>,
     input: KeyboardInput,
     windows: Query<&Window>,
@@ -1009,12 +1006,17 @@ pub(super) fn brush_vertex_interact(
             });
         }
     } else if !ctrl {
+        // Click outside any vertex: exit to Object mode
+        *edit_mode = EditMode::Object;
+        brush_selection.entity = None;
+        brush_selection.faces.clear();
         brush_selection.vertices.clear();
+        brush_selection.edges.clear();
     }
 }
 
 pub(super) fn brush_edge_interact(
-    edit_mode: Res<EditMode>,
+    mut edit_mode: ResMut<EditMode>,
     mouse: Res<ButtonInput<MouseButton>>,
     input: KeyboardInput,
     windows: Query<&Window>,
@@ -1307,6 +1309,11 @@ pub(super) fn brush_edge_interact(
             });
         }
     } else if !ctrl {
+        // Click outside any edge: exit to Object mode
+        *edit_mode = EditMode::Object;
+        brush_selection.entity = None;
+        brush_selection.faces.clear();
+        brush_selection.vertices.clear();
         brush_selection.edges.clear();
     }
 }
@@ -1327,6 +1334,8 @@ pub(crate) struct BrushDragState {
     pub pending: Option<PendingSubDrag>,
     pub active: bool,
     pub extrude_mode: FaceExtrudeMode,
+    /// When true, exits to Object mode when drag completes or is cancelled.
+    pub quick_action: bool,
     start_brush: Option<Brush>,
     start_cursor: Vec2,
     drag_face_normal: Vec3,
@@ -1949,5 +1958,155 @@ pub(super) fn handle_clip_mode(
             _ => world_normal,
         };
         gizmos.arrow(center, center + arrow_dir * 0.5, Color::srgb(1.0, 0.3, 0.3));
+    }
+}
+
+/// Pick the closest face under the cursor on a given brush entity.
+fn pick_face_under_cursor(
+    viewport_cursor: Vec2,
+    brush_entity: Entity,
+    camera: &Camera,
+    cam_tf: &GlobalTransform,
+    cache: &BrushMeshCache,
+    face_entities: &Query<(Entity, &super::BrushFaceEntity, &GlobalTransform)>,
+) -> Option<usize> {
+    let mut best_face = None;
+    let mut best_depth = f32::MAX;
+
+    for (_, face_ent, face_global) in face_entities {
+        if face_ent.brush_entity != brush_entity {
+            continue;
+        }
+        let face_idx = face_ent.face_index;
+        let polygon = &cache.face_polygons[face_idx];
+        if polygon.len() < 3 {
+            continue;
+        }
+        let screen_verts: Vec<Vec2> = polygon
+            .iter()
+            .filter_map(|&vi| {
+                let world = face_global.transform_point(cache.vertices[vi]);
+                camera.world_to_viewport(cam_tf, world).ok()
+            })
+            .collect();
+        if screen_verts.len() < 3 {
+            continue;
+        }
+        if point_in_polygon_2d(viewport_cursor, &screen_verts) {
+            let centroid: Vec3 =
+                polygon.iter().map(|&vi| cache.vertices[vi]).sum::<Vec3>() / polygon.len() as f32;
+            let world_centroid = face_global.transform_point(centroid);
+            let depth = (cam_tf.translation() - world_centroid).length_squared();
+            if depth < best_depth {
+                best_depth = depth;
+                best_face = Some(face_idx);
+            }
+        }
+    }
+    best_face
+}
+
+/// Updates the hover resource each frame to track which face the cursor is over.
+pub(super) fn brush_face_hover(
+    edit_mode: Res<EditMode>,
+    input: KeyboardInput,
+    windows: Query<&Window>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainViewportCamera>>,
+    viewport_query: Query<(&ComputedNode, &UiGlobalTransform), With<SceneViewport>>,
+    face_entities: Query<(Entity, &super::BrushFaceEntity, &GlobalTransform)>,
+    brush_selection: Res<BrushSelection>,
+    brush_caches: Query<&BrushMeshCache>,
+    selection: Res<Selection>,
+    drag_state: Res<BrushDragState>,
+    mut hover: ResMut<super::BrushFaceHover>,
+    brushes: Query<(), With<Brush>>,
+) {
+    let keyboard = &input.keyboard;
+    let in_face_edit = matches!(*edit_mode, EditMode::BrushEdit(BrushEditMode::Face));
+    let shift = keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let alt = keyboard.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
+
+    // Clear hover during active drag
+    if drag_state.active {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    }
+
+    // Determine if we should show hover
+    let should_hover = if in_face_edit {
+        true
+    } else if *edit_mode == EditMode::Object && (shift || alt) {
+        true
+    } else {
+        false
+    };
+
+    if !should_hover {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    }
+
+    let intent = if alt {
+        super::HoverIntent::Extend
+    } else {
+        super::HoverIntent::PushPull
+    };
+
+    let Ok(window) = windows.single() else {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    };
+    let Some(cursor_pos) = window.cursor_position() else {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    };
+    let Ok((camera, cam_tf)) = camera_query.single() else {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    };
+    let Some(viewport_cursor) = window_to_viewport_cursor(cursor_pos, camera, &viewport_query)
+    else {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    };
+
+    let brush_entity = if in_face_edit {
+        brush_selection.entity
+    } else {
+        selection.primary().filter(|&e| brushes.contains(e))
+    };
+
+    let Some(brush_entity) = brush_entity else {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    };
+
+    let Ok(cache) = brush_caches.get(brush_entity) else {
+        hover.entity = None;
+        hover.face_index = None;
+        return;
+    };
+
+    if let Some(face_idx) = pick_face_under_cursor(
+        viewport_cursor,
+        brush_entity,
+        camera,
+        cam_tf,
+        cache,
+        &face_entities,
+    ) {
+        hover.entity = Some(brush_entity);
+        hover.face_index = Some(face_idx);
+        hover.intent = intent;
+    } else {
+        hover.entity = None;
+        hover.face_index = None;
     }
 }

@@ -1,6 +1,6 @@
 pub mod format;
 mod loader;
-mod mesh_rebuild;
+pub mod mesh_rebuild;
 pub mod types;
 
 use bevy::prelude::*;
@@ -17,7 +17,20 @@ pub use jackdaw_geometry;
 pub use format::{JsnProject, JsnProjectConfig, JsnScene};
 pub use loader::JsnAssetLoader;
 
-pub struct JsnPlugin;
+pub struct JsnPlugin {
+    /// Whether to run the built-in runtime mesh rebuild for brushes.
+    /// Defaults to `true`. Set to `false` if your app has its own mesh rebuild
+    /// (e.g. the editor's per-face material palette system).
+    pub runtime_mesh_rebuild: bool,
+}
+
+impl Default for JsnPlugin {
+    fn default() -> Self {
+        Self {
+            runtime_mesh_rebuild: true,
+        }
+    }
+}
 
 impl Plugin for JsnPlugin {
     fn build(&self, app: &mut App) {
@@ -30,7 +43,9 @@ impl Plugin for JsnPlugin {
             .register_type::<JsnPrefab>()
             .register_type::<NavmeshRegion>()
             .register_type::<Terrain>()
-            .init_asset_loader::<JsnAssetLoader>()
-            .add_systems(Update, mesh_rebuild::rebuild_brush_meshes);
+            .init_asset_loader::<JsnAssetLoader>();
+        if self.runtime_mesh_rebuild {
+            app.add_systems(Update, mesh_rebuild::rebuild_brush_meshes);
+        }
     }
 }

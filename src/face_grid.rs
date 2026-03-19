@@ -4,7 +4,7 @@ use bevy::color::palettes::tailwind;
 use bevy::prelude::*;
 
 use crate::brush::{Brush, BrushMeshCache};
-use crate::draw_brush::CutPreviewHidden;
+use crate::draw_brush::{CutPreviewFace, CutPreviewHidden, CutResultPreviewMesh};
 use crate::selection::Selected;
 use crate::snapping::SnapSettings;
 use crate::viewport_overlays::OverlaySettings;
@@ -22,7 +22,12 @@ impl Plugin for FaceGridPlugin {
             .add_systems(Startup, configure_face_grid_gizmos)
             .add_systems(
                 PostUpdate,
-                (draw_brush_edges, draw_face_grids)
+                (
+                    draw_brush_edges,
+                    draw_face_grids,
+                    draw_cut_preview_edges,
+                    draw_cut_preview_grids,
+                )
                     .after(bevy::transform::TransformSystems::Propagate)
                     .after(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate)
                     .run_if(in_state(crate::AppState::Editor)),
@@ -106,6 +111,9 @@ fn draw_face_grids(
             Color::from(tailwind::GRAY_600).with_alpha(0.25)
         };
         for (face_idx, face_data) in brush.faces.iter().enumerate() {
+            if face_data.material == Handle::default() {
+                continue; // Skip default-material faces — checkerboard provides its own structure
+            }
             let Some(polygon_indices) = cache.face_polygons.get(face_idx) else {
                 continue;
             };
@@ -195,6 +203,112 @@ fn draw_face_grids(
                 }
                 v += grid_size;
             }
+        }
+    }
+}
+
+/// Draw wireframe edges on cut-preview fragment faces.
+fn draw_cut_preview_edges(
+    mut gizmos: Gizmos<FaceGridGizmoGroup>,
+    settings: Res<OverlaySettings>,
+    previews: Query<&CutPreviewFace, With<CutResultPreviewMesh>>,
+) {
+    if !settings.show_brush_wireframe {
+        return;
+    }
+
+    let color: Color = tailwind::CYAN_400.into();
+
+    for face in &previews {
+        let verts = &face.world_vertices;
+        if verts.len() < 3 {
+            continue;
+        }
+        for i in 0..verts.len() {
+            let a = verts[i];
+            let b = verts[(i + 1) % verts.len()];
+            gizmos.line(a, b, color);
+        }
+    }
+}
+
+/// Draw grid lines on cut-preview fragment faces.
+fn draw_cut_preview_grids(
+    mut gizmos: Gizmos<FaceGridGizmoGroup>,
+    settings: Res<OverlaySettings>,
+    snap: Res<SnapSettings>,
+    previews: Query<&CutPreviewFace, With<CutResultPreviewMesh>>,
+) {
+    if !settings.show_face_grid {
+        return;
+    }
+
+    let grid_size = snap.grid_size();
+    let color = Color::from(tailwind::GRAY_600).with_alpha(0.5);
+
+    for face in &previews {
+        let world_verts = &face.world_vertices;
+        if world_verts.len() < 3 {
+            continue;
+        }
+        let world_normal = face.world_normal;
+
+        let abs_n = world_normal.abs();
+        let (axis_u, axis_v, plane_axis) = if abs_n.x >= abs_n.y && abs_n.x >= abs_n.z {
+            (1usize, 2usize, 0usize)
+        } else if abs_n.y >= abs_n.x && abs_n.y >= abs_n.z {
+            (0, 2, 1)
+        } else {
+            (0, 1, 2)
+        };
+
+        let polygon_2d: Vec<Vec2> = world_verts
+            .iter()
+            .map(|v| {
+                let arr = v.to_array();
+                Vec2::new(arr[axis_u], arr[axis_v])
+            })
+            .collect();
+
+        let mut min_2d = Vec2::splat(f32::MAX);
+        let mut max_2d = Vec2::splat(f32::MIN);
+        for &p in &polygon_2d {
+            min_2d = min_2d.min(p);
+            max_2d = max_2d.max(p);
+        }
+
+        let grid_min_u = (min_2d.x / grid_size).floor() * grid_size;
+        let grid_max_u = (max_2d.x / grid_size).ceil() * grid_size;
+        let grid_min_v = (min_2d.y / grid_size).floor() * grid_size;
+        let grid_max_v = (max_2d.y / grid_size).ceil() * grid_size;
+
+        let plane_d = world_normal.dot(world_verts[0]);
+        let normal_arr = world_normal.to_array();
+
+        let mut u = grid_min_u;
+        while u <= grid_max_u + grid_size * 0.01 {
+            if let Some((p0_2d, p1_2d)) = clip_line_to_convex_polygon(&polygon_2d, true, u) {
+                let a = reconstruct_3d(p0_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
+                let b = reconstruct_3d(p1_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
+                if let (Some(a), Some(b)) = (a, b) {
+                    let offset = world_normal * 0.002;
+                    gizmos.line(a + offset, b + offset, color);
+                }
+            }
+            u += grid_size;
+        }
+
+        let mut v = grid_min_v;
+        while v <= grid_max_v + grid_size * 0.01 {
+            if let Some((p0_2d, p1_2d)) = clip_line_to_convex_polygon(&polygon_2d, false, v) {
+                let a = reconstruct_3d(p0_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
+                let b = reconstruct_3d(p1_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
+                if let (Some(a), Some(b)) = (a, b) {
+                    let offset = world_normal * 0.002;
+                    gizmos.line(a + offset, b + offset, color);
+                }
+            }
+            v += grid_size;
         }
     }
 }

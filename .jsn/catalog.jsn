@@ -140,7 +140,7 @@
         "opaque_render_method": "Auto",
         "parallax_depth_scale": 0.10000000149011612,
         "parallax_mapping_method": "Occlusion",
-        "perceptual_roughness": 0.5,
+        "perceptual_roughness": 0.8999999761581421,
         "reflectance": 0.5,
         "specular_tint": {
           "LinearRgba": {

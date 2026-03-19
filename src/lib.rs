@@ -96,7 +96,7 @@ impl Plugin for EditorPlugin {
             .add_plugins((
                 FeathersPlugins.build().disable::<InputDispatchPlugin>(),
                 EditorFeathersPlugin,
-                jackdaw_jsn::JsnPlugin,
+                jackdaw_jsn::JsnPlugin { runtime_mesh_rebuild: false },
                 project_select::ProjectSelectPlugin,
                 inspector::InspectorPlugin,
                 hierarchy::HierarchyPlugin,
@@ -403,7 +403,6 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
                     bs.faces.clear();
                     bs.vertices.clear();
                     bs.edges.clear();
-                    bs.temporary_mode = false;
                 }
             });
         }

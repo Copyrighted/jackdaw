@@ -64,11 +64,25 @@ pub struct BrushSelection {
     pub vertices: Vec<usize>,
     /// Selected edges as normalized (min, max) vertex index pairs.
     pub edges: Vec<(usize, usize)>,
-    /// True when face mode was entered via shift+click (temporary peek).
-    pub temporary_mode: bool,
     /// Remembered face from the last time face mode was exited (for extend-to-brush fallback).
     pub last_face_entity: Option<Entity>,
     pub last_face_index: Option<usize>,
+}
+
+/// Intent for face hover highlight color.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum HoverIntent {
+    #[default]
+    PushPull,
+    Extend,
+}
+
+/// Tracks which brush face the cursor is hovering over.
+#[derive(Resource, Default)]
+pub struct BrushFaceHover {
+    pub entity: Option<Entity>,
+    pub face_index: Option<usize>,
+    pub intent: HoverIntent,
 }
 
 /// Material palette for brush faces.
@@ -76,6 +90,12 @@ pub struct BrushSelection {
 pub struct BrushMaterialPalette {
     pub materials: Vec<Handle<StandardMaterial>>,
     pub preview_materials: Vec<Handle<StandardMaterial>>,
+    /// Grid-textured default material at 50% alpha (unselected).
+    pub default_material: Handle<StandardMaterial>,
+    /// Grid-textured default material at 90% alpha (selected).
+    pub default_selected_material: Handle<StandardMaterial>,
+    /// Grid-textured default material at 75% alpha (drag preview).
+    pub default_preview_material: Handle<StandardMaterial>,
 }
 
 /// Remembers the last material applied via the texture/material browser, so new brushes inherit it.
@@ -119,6 +139,7 @@ impl Plugin for BrushPlugin {
             .init_resource::<EditMode>()
             .init_resource::<BrushSelection>()
             .init_resource::<BrushMaterialPalette>()
+            .init_resource::<BrushFaceHover>()
             .init_resource::<BrushDragState>()
             .init_resource::<VertexDragState>()
             .init_resource::<EdgeDragState>()
@@ -132,6 +153,7 @@ impl Plugin for BrushPlugin {
                 Update,
                 (
                     interaction::handle_edit_mode_keys,
+                    interaction::brush_face_hover,
                     interaction::brush_face_interact,
                     interaction::brush_vertex_interact,
                     interaction::brush_edge_interact,
@@ -145,11 +167,14 @@ impl Plugin for BrushPlugin {
                 Update,
                 (
                     mesh::sync_brush_preview,
+                    ApplyDeferred,
                     mesh::regenerate_brush_meshes,
-                    mesh::apply_brush_preview_materials,
+                    ApplyDeferred,
+                    mesh::ensure_brush_face_materials,
                     gizmo_overlay::draw_brush_edit_gizmos,
                 )
                     .chain()
+                    .after(crate::EditorInteraction)
                     .run_if(in_state(crate::AppState::Editor)),
             );
     }

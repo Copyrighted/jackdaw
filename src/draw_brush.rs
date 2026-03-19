@@ -29,6 +29,7 @@ use jackdaw_jsn::{Brush, BrushFaceData, BrushPlane};
 const EXTRUDE_DEPTH_SENSITIVITY: f32 = 0.003;
 const MIN_FOOTPRINT_SIZE: f32 = 0.01;
 const MIN_EXTRUDE_DEPTH: f32 = 0.01;
+const MIN_FRAGMENT_SIZE: f32 = 0.005;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DrawPhase {
@@ -78,6 +79,8 @@ pub struct ActiveDraw {
     pub polygon_cursor: Option<Vec3>,
     /// When true, constrain cursor to nearest 45° angle from last vertex.
     pub diagonal_snap: bool,
+    /// Last successful face raycast hit point, for plane stickiness when raycast misses near edges.
+    pub cached_face_hit: Option<Vec3>,
 }
 
 #[derive(Resource, Default)]
@@ -117,7 +120,15 @@ pub struct DrawBrushPlugin;
 struct DrawPreviewMesh;
 
 #[derive(Component)]
-struct CutResultPreviewMesh;
+pub struct CutResultPreviewMesh;
+
+/// Per-face data attached to each [`CutResultPreviewMesh`] so the face-grid
+/// gizmo systems can render edges and grid lines on cut-preview fragments.
+#[derive(Component)]
+pub struct CutPreviewFace {
+    pub world_vertices: Vec<Vec3>,
+    pub world_normal: Vec3,
+}
 
 /// Marker for brush face entities hidden during cut preview.
 #[derive(Component)]
@@ -239,6 +250,7 @@ fn draw_brush_activate(
         polygon_vertices: Vec::new(),
         polygon_cursor: None,
         diagonal_snap: false,
+        cached_face_hit: None,
     });
 }
 
@@ -289,33 +301,87 @@ fn draw_brush_update(
                     MeshRayCastSettings::default().with_visibility(RayCastVisibility::Any);
                 let hits = ray_cast.cast_ray(ray, &settings);
 
-                let mut found_face = false;
+                let mut best_hit: Option<(Vec3, Vec3)> = None;
+                let mut best_distance = f32::MAX;
+                let mut best_facing = f32::MIN;
+
                 for (hit_entity, hit_data) in hits {
                     if let Ok((face_ent, _face_tf)) = brush_faces.get(*hit_entity) {
                         if let Ok((brush, brush_tf)) = brushes.get(face_ent.brush_entity) {
                             let face = &brush.faces[face_ent.face_index];
                             let (_, brush_rot, _) = brush_tf.to_scale_rotation_translation();
                             let world_normal = (brush_rot * face.plane.normal).normalize();
-                            let hit_point = hit_data.point;
+                            let camera_facing = (-*ray.direction).dot(world_normal);
+                            if camera_facing <= 0.0 {
+                                continue;
+                            }
 
-                            let (u, v) = compute_face_tangent_axes(world_normal);
-                            active.plane = DrawPlane {
-                                origin: hit_point,
-                                normal: world_normal,
-                                axis_u: u,
-                                axis_v: v,
-                            };
-                            found_face = true;
-                            break;
+                            let dist = hit_data.distance;
+                            if dist < best_distance - 0.01 {
+                                // Clearly closer — take it
+                                best_hit = Some((hit_data.point, world_normal));
+                                best_distance = dist;
+                                best_facing = camera_facing;
+                            } else if dist < best_distance + 0.01 && camera_facing > best_facing {
+                                // Within tolerance — prefer more camera-facing
+                                best_hit = Some((hit_data.point, world_normal));
+                                best_facing = camera_facing;
+                                best_distance = best_distance.min(dist);
+                            }
                         }
                     }
                 }
 
-                if !found_face {
-                    // Fall back to Y=0 ground plane
+                if let Some((hit_point, world_normal)) = best_hit {
+                    // Face identified — update plane and cache hit point
+                    active.cached_face_hit = Some(hit_point);
+                    let (u, v) = compute_face_tangent_axes(world_normal);
+                    let plane = DrawPlane {
+                        origin: hit_point,
+                        normal: world_normal,
+                        axis_u: u,
+                        axis_v: v,
+                    };
+                    let snapped_origin =
+                        snap_to_plane_grid(hit_point, &plane, &snap_settings, false);
+                    active.plane = DrawPlane {
+                        origin: snapped_origin,
+                        normal: world_normal,
+                        axis_u: u,
+                        axis_v: v,
+                    };
+                } else if active.cached_face_hit.is_some() {
+                    // Raycast missed but we recently identified a face.
+                    // Project cursor onto cached plane; if still near the face, keep it.
+                    if let Some(projected) =
+                        ray_plane_intersection(ray, active.plane.origin, active.plane.normal)
+                    {
+                        let last_hit = active.cached_face_hit.unwrap();
+                        let dist = projected.distance(last_hit);
+                        if dist > 2.0 {
+                            // Cursor has moved well beyond the face — fall back to ground
+                            active.cached_face_hit = None;
+                            if let Some(ground_hit) =
+                                ray_plane_intersection(ray, Vec3::ZERO, Vec3::Y)
+                            {
+                                let snapped_origin =
+                                    snap_settings.snap_translate_vec3(ground_hit);
+                                active.plane = DrawPlane {
+                                    origin: snapped_origin,
+                                    normal: Vec3::Y,
+                                    axis_u: Vec3::X,
+                                    axis_v: Vec3::Z,
+                                };
+                            }
+                        }
+                        // else: keep using cached face plane (cursor still near face)
+                    }
+                } else {
+                    // Never been on a face — fall back to Y=0 ground plane
                     if let Some(ground_hit) = ray_plane_intersection(ray, Vec3::ZERO, Vec3::Y) {
+                        let snapped_origin = snap_settings.snap_translate_vec3(ground_hit);
                         active.plane = DrawPlane {
-                            origin: ground_hit,
+                            origin: snapped_origin,
                             normal: Vec3::Y,
                             axis_u: Vec3::X,
                             axis_v: Vec3::Z,
@@ -800,6 +866,14 @@ fn draw_brush_preview(
                     gizmos.line(base[i], top[i], color);
                 }
             }
+
+            let grid_center = if !active.polygon_vertices.is_empty() {
+                active.polygon_vertices.iter().sum::<Vec3>()
+                    / active.polygon_vertices.len() as f32
+            } else {
+                (active.corner1 + active.corner2) / 2.0
+            };
+            draw_plane_grid(&mut gizmos, &active.plane, grid_center, &snap_settings);
         }
     }
 }
@@ -1506,6 +1580,12 @@ fn manage_draw_preview_mesh(
 
             let intersects = brushes_intersect(&world_target, &cutter_planes);
             if !intersects {
+                if hidden_query.get(brush_entity).is_ok() {
+                    if let Ok(mut vis) = visibility_query.get_mut(brush_entity) {
+                        *vis = Visibility::Inherited;
+                    }
+                    commands.entity(brush_entity).remove::<CutPreviewHidden>();
+                }
                 continue;
             }
 
@@ -1515,6 +1595,12 @@ fn manage_draw_preview_mesh(
             // otherwise the cutter is degenerate (e.g. inverted depth) and we keep
             // the original visible.
             if kept_fragments.is_empty() {
+                if hidden_query.get(brush_entity).is_ok() {
+                    if let Ok(mut vis) = visibility_query.get_mut(brush_entity) {
+                        *vis = Visibility::Inherited;
+                    }
+                    commands.entity(brush_entity).remove::<CutPreviewHidden>();
+                }
                 continue;
             }
 
@@ -1576,8 +1662,11 @@ fn manage_draw_preview_mesh(
                     let material = if face_data.material != Handle::default() {
                         face_data.material.clone()
                     } else {
-                        palette.materials.first().cloned().unwrap_or_default()
+                        palette.default_selected_material.clone()
                     };
+
+                    let face_world_verts: Vec<Vec3> =
+                        indices.iter().map(|&vi| frag_verts[vi]).collect();
 
                     commands.spawn((
                         Mesh3d(meshes.add(mesh)),
@@ -1585,6 +1674,10 @@ fn manage_draw_preview_mesh(
                         Visibility::Inherited,
                         Transform::default(),
                         CutResultPreviewMesh,
+                        CutPreviewFace {
+                            world_vertices: face_world_verts,
+                            world_normal: face_data.plane.normal,
+                        },
                         NotShadowCaster,
                         NotShadowReceiver,
                         EditorEntity,
@@ -1646,7 +1739,7 @@ fn build_cutter_planes(active: &ActiveDraw) -> Vec<BrushFaceData> {
         (plane.normal, plane.normal.dot(center) + half_depth),
         (
             -plane.normal,
-            (-plane.normal).dot(center) + half_depth - 0.001,
+            (-plane.normal).dot(center) + half_depth,
         ),
     ];
     normals_dists
@@ -1688,12 +1781,12 @@ fn build_cutter_planes_polygon(active: &ActiveDraw) -> Vec<BrushFaceData> {
         ..default()
     });
 
-    // Bottom cap (-normal, inset by 0.001 to avoid EPSILON-boundary artifacts)
+    // Bottom cap (-normal)
     let (bot_u, bot_v) = compute_face_tangent_axes(-normal);
     faces.push(BrushFaceData {
         plane: BrushPlane {
             normal: -normal,
-            distance: (-normal).dot(center) + half_depth - 0.001,
+            distance: (-normal).dot(center) + half_depth,
         },
         uv_scale: Vec2::ONE,
         uv_u_axis: bot_u,
@@ -1774,6 +1867,15 @@ fn subtract_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
                 // Compute vertices to find centroid (world space)
                 let (world_verts, _) = compute_brush_geometry(fragment_faces);
                 if world_verts.len() < 4 {
+                    continue;
+                }
+                let bbox_min = world_verts.iter().fold(Vec3::MAX, |a, &b| a.min(b));
+                let bbox_max = world_verts.iter().fold(Vec3::MIN, |a, &b| a.max(b));
+                let bbox_size = bbox_max - bbox_min;
+                if bbox_size.x < MIN_FRAGMENT_SIZE
+                    || bbox_size.y < MIN_FRAGMENT_SIZE
+                    || bbox_size.z < MIN_FRAGMENT_SIZE
+                {
                     continue;
                 }
                 let centroid: Vec3 = world_verts.iter().sum::<Vec3>() / world_verts.len() as f32;
@@ -2595,7 +2697,6 @@ fn extend_face_to_brush(
         brush_selection.faces.clear();
         brush_selection.vertices.clear();
         brush_selection.edges.clear();
-        brush_selection.temporary_mode = false;
     }
 
     let targets_clone = targets.clone();

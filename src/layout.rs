@@ -472,6 +472,7 @@ fn toolbar_edit_button(icon: Icon, tool: EditToolButton, font: Handle<Font>) -> 
                                 polygon_vertices: Vec::new(),
                                 polygon_cursor: None,
                                 diagonal_snap: false,
+                                cached_face_hit: None,
                             });
                         }
                     }
@@ -504,7 +505,6 @@ fn toolbar_edit_button(icon: Icon, tool: EditToolButton, font: Handle<Font>) -> 
                                 brush_selection.faces.clear();
                                 brush_selection.vertices.clear();
                                 brush_selection.edges.clear();
-                                brush_selection.temporary_mode = false;
                             }
                         } else {
                             // Enter edit on primary if it's a brush
@@ -516,7 +516,6 @@ fn toolbar_edit_button(icon: Icon, tool: EditToolButton, font: Handle<Font>) -> 
                                 brush_selection.faces.clear();
                                 brush_selection.vertices.clear();
                                 brush_selection.edges.clear();
-                                brush_selection.temporary_mode = false;
                             }
                         }
                     }
