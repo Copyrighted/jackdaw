@@ -67,7 +67,7 @@ pub fn scene_snapshot_handler(
 }
 
 /// Serializer processor for remote snapshots.
-/// - Handle<T> → null (game assets aren't loaded in editor)
+/// - `Handle<T>` → null (game assets aren't loaded in editor)
 /// - Entity fields → raw u64 bits (no index remapping)
 /// - Non-finite floats → descriptive strings
 struct RemoteSerializerProcessor;
