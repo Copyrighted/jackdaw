@@ -1,14 +1,14 @@
 //! Physics simulation support for the editor's Physics tool.
 //!
 //! This module adds `PhysicsPlugins` to the app and exposes `PhysicsToolState`
-//! — a resource that the editor's Physics tool uses to track its active run
+//!  -- a resource that the editor's Physics tool uses to track its active run
 //! (snapshots for undo, dragged entity, disabled bodies, sim-activation
 //! state). Physics is paused by default on startup; the tool unpauses it
 //! when the user first drags a selected entity, and pauses it again on
 //! tool exit.
 //!
 //! Wiring the tool lifecycle (entering/exiting the mode, committing
-//! transforms, handling keys) lives in the main jackdaw crate — this crate
+//! transforms, handling keys) lives in the main jackdaw crate  -- this crate
 //! stays jackdaw-agnostic and only provides the avian hookup + state types.
 
 use avian3d::prelude::*;
@@ -63,7 +63,7 @@ impl Plugin for PhysicsSimulationPlugin {
     }
 }
 
-/// Physics stays paused by default — the editor only runs it when the
+/// Physics stays paused by default  -- the editor only runs it when the
 /// Physics tool is active and the user has initiated a drag.
 fn pause_physics_on_startup(mut time: ResMut<Time<Physics>>) {
     time.pause();

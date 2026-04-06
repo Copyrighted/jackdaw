@@ -89,7 +89,7 @@ pub(crate) fn handle_viewport_click(
 
     // Don't select during gizmo drag, modal ops, viewport drag, brush edit mode, draw mode,
     // terrain sculpt mode, or shift+click (which starts box select).
-    // Physics mode IS allowed — the user needs to click-select entities to
+    // Physics mode IS allowed  -- the user needs to click-select entities to
     // drag them in the physics tool.
     if !mouse.just_pressed(MouseButton::Left)
         || shift
@@ -239,7 +239,7 @@ pub(crate) fn handle_viewport_click(
         last_click.entity = None;
         last_click.time = 0.0;
 
-        // Clicked on empty space — exit group edit and deselect all (unless Ctrl held)
+        // Clicked on empty space  -- exit group edit and deselect all (unless Ctrl held)
         if group_edit.active_group.is_some() {
             group_edit.active_group = None;
         }
@@ -393,7 +393,7 @@ fn find_selectable_ancestor(
     brush_groups: &Query<(), With<BrushGroup>>,
 ) -> Option<Entity> {
     // Walk up until we find a scene entity (one that has Transform and is not EditorEntity)
-    // Start with the hit entity itself — it may already be a scene entity
+    // Start with the hit entity itself  -- it may already be a scene entity
     loop {
         if scene_entities.contains(entity) {
             // Check if this entity has a parent that's also a scene entity;
@@ -402,11 +402,11 @@ fn find_selectable_ancestor(
                 let parent = child_of.0;
                 if scene_entities.contains(parent) {
                     // If we're inside a group and this parent IS that group,
-                    // stop here — let the user select the child fragment.
+                    // stop here  -- let the user select the child fragment.
                     if group_edit.active_group == Some(parent) && brush_groups.contains(parent) {
                         return Some(entity);
                     }
-                    // Keep walking up — the parent is also selectable
+                    // Keep walking up  -- the parent is also selectable
                     entity = parent;
                     continue;
                 }

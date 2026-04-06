@@ -1747,7 +1747,7 @@ pub(crate) fn refresh_enum_variants(
     icon_font: Res<jackdaw_feathers::icons::IconFont>,
     mut hosts: Query<(Entity, &mut super::EnumVariantHost, &Children)>,
     // `Without<EnumVariantHost>` makes this query disjoint from `hosts` so the
-    // two queries can coexist — we only ever need to read the selected source
+    // two queries can coexist  -- we only ever need to read the selected source
     // entity, never a UI container.
     entity_query: Query<bevy::ecs::world::EntityRef, Without<super::EnumVariantHost>>,
 ) {
@@ -2170,7 +2170,7 @@ fn apply_enum_variant_with_undo(
     let mut history = world.resource_mut::<CommandHistory>();
     history.undo_stack.push(cmd);
     history.redo_stack.clear();
-    // No need to flag anything — `refresh_enum_variants` detects the ECS
+    // No need to flag anything  -- `refresh_enum_variants` detects the ECS
     // variant change and rebuilds the affected subtree automatically. Same
     // goes for undo/redo since the command framework mutates the ECS too.
 }

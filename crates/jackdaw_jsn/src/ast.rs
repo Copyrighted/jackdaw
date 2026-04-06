@@ -5,7 +5,7 @@ use bevy::reflect::TypeRegistry;
 
 use crate::format::{JsnAssets, JsnEntity, JsnMetadata, JsnScene};
 
-/// In-memory scene document — the single source of truth for scene data.
+/// In-memory scene document  -- the single source of truth for scene data.
 ///
 /// All editor mutations should go through this resource. ECS entities exist
 /// as a preview layer, kept in sync by `apply_dirty_jsn_to_ecs`.
@@ -26,14 +26,14 @@ pub struct SceneJsnAst {
 
 /// A single entity in the scene document.
 ///
-/// Mirrors `JsnEntity` from the file format — `name` and `parent` are
+/// Mirrors `JsnEntity` from the file format  -- `name` and `parent` are
 /// structural fields, everything else (Transform, Visibility, Brush, etc.)
 /// lives in `components` as `serde_json::Value`.
 pub struct JsnEntityNode {
     /// Parent index into `SceneJsnAst::nodes`.
     pub parent: Option<usize>,
     /// All component data keyed by type path (e.g. `"bevy_transform::components::transform::Transform"`).
-    /// Includes Name, Transform, Visibility — everything is a component.
+    /// Includes Name, Transform, Visibility  -- everything is a component.
     pub components: HashMap<String, serde_json::Value>,
     /// Components auto-added via Bevy's `#[require]` attributes (e.g., avian's
     /// `Position`, `ColliderAabb`, `ComputedMass`, etc.). These are:
@@ -255,7 +255,7 @@ fn field_index_from_type_info(type_info: &TypeInfo, field_name: &str) -> Option<
 /// format (`{"VariantName": inner}` for struct/tuple, `"VariantName"` for
 /// unit), return the variant name and a reference to the inner JSON.
 ///
-/// For unit variants the "inner" is the string itself — callers must check
+/// For unit variants the "inner" is the string itself  -- callers must check
 /// the variant kind via `EnumInfo` before descending further.
 fn enum_variant_from_json(json: &serde_json::Value) -> Option<(&str, &serde_json::Value)> {
     match json {

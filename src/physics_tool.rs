@@ -81,7 +81,7 @@ fn enter_physics_tool(world: &mut World) {
     state.drag = None;
 
     // Snapshot all RigidBody transforms; disable non-selected Dynamic/Kinematic
-    // bodies. Static bodies are NEVER disabled — they need to remain as solid
+    // bodies. Static bodies are NEVER disabled  -- they need to remain as solid
     // collision surfaces for the simulated objects to land on.
     let mut bodies: Vec<(Entity, Transform, RigidBody, bool)> = Vec::new();
     let mut query = world.query_filtered::<(Entity, &Transform, &RigidBody), With<RigidBody>>();
@@ -97,7 +97,7 @@ fn enter_physics_tool(world: &mut World) {
 
     for &(entity, _, rb, is_selected) in &bodies {
         if rb == RigidBody::Static {
-            // Static bodies are always solid — never disable them
+            // Static bodies are always solid  -- never disable them
             continue;
         }
         if !is_selected {
@@ -110,7 +110,7 @@ fn enter_physics_tool(world: &mut World) {
             }
         } else {
             // Ensure selected entities are NOT disabled and are awake.
-            // Removing Sleeping + zeroing isn't enough — we also need WakeBody
+            // Removing Sleeping + zeroing isn't enough  -- we also need WakeBody
             // to register the entity in avian's island system.
             if let Ok(mut ec) = world.get_entity_mut(entity) {
                 ec.remove::<(RigidBodyDisabled, Sleeping)>();
@@ -154,7 +154,7 @@ fn exit_physics_tool(world: &mut World) {
 }
 
 /// Toggle `RigidBodyDisabled` when selection changes during Physics mode.
-/// Static bodies are never disabled — they must remain as solid surfaces.
+/// Static bodies are never disabled  -- they must remain as solid surfaces.
 fn sync_selection_disable_state(
     edit_mode: Res<EditMode>,
     selection: Res<Selection>,

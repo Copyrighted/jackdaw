@@ -203,7 +203,7 @@ impl EditorCommand for AddComponent {
 
         // Create default value
         let Some(reflect_default) = registration.data::<ReflectDefault>() else {
-            warn!("No ReflectDefault for component — cannot add");
+            warn!("No ReflectDefault for component  -- cannot add");
             return;
         };
         let default_value = reflect_default.default();
@@ -211,7 +211,7 @@ impl EditorCommand for AddComponent {
             return;
         };
 
-        // Insert the component — this triggers #[require] which may add
+        // Insert the component  -- this triggers #[require] which may add
         // many more components (e.g. RigidBody requires Position, Rotation,
         // LinearVelocity, etc.).
         reflect_component.insert(
@@ -551,7 +551,7 @@ impl EditorCommand for SetJsnField {
     }
 }
 
-/// Apply a JSON value to an ECS component — either full component replacement
+/// Apply a JSON value to an ECS component  -- either full component replacement
 /// (empty field_path) or field-level update.
 fn apply_jsn_field_to_ecs(
     world: &mut World,
@@ -572,7 +572,7 @@ fn apply_jsn_field_to_ecs(
 
     if field_path.is_empty() {
         // Full component replacement via TypedReflectDeserializer.
-        // Always use `insert` (not `apply`) — this handles:
+        // Always use `insert` (not `apply`)  -- this handles:
         //  - Immutable components like RigidBody (apply panics on immutable)
         //  - Components removed externally (e.g. avian removing ColliderConstructor)
         //  - Normal mutable components (insert replaces in-place)
@@ -636,7 +636,7 @@ fn apply_json_to_reflect(
                 *f = s.clone();
                 return;
             }
-            // Unit enum variants serialize as a bare string — fall through to the
+            // Unit enum variants serialize as a bare string  -- fall through to the
             // typed-deserializer path below.
             try_typed_deserialize(field, value, registry);
         }
@@ -696,7 +696,7 @@ pub fn sync_component_to_ast<T: bevy::reflect::Reflect>(
 /// in the inspector via the normal `SetJsnField` path and persist with
 /// scene save/load.
 ///
-/// Designed to be upstream-compatible with BSN — the AST becomes the full
+/// Designed to be upstream-compatible with BSN  -- the AST becomes the full
 /// authoritative representation, not just the user's explicit additions.
 ///
 /// Returns the type paths of newly-promoted components (for undo cleanup).
@@ -771,7 +771,7 @@ pub fn sync_required_to_ast(world: &mut World, entity: Entity) -> Vec<String> {
         for (type_path, value) in to_add {
             ast.set_component(entity, &type_path, value);
         }
-        // Mark as derived — displayed in inspector but NOT persisted on save.
+        // Mark as derived  -- displayed in inspector but NOT persisted on save.
         if let Some(node) = ast.node_for_entity_mut(entity) {
             for path in &promoted {
                 node.derived_components.insert(path.clone());

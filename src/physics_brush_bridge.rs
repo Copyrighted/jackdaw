@@ -1,7 +1,7 @@
 //! Bridge between editor collider configuration and avian `Collider` components.
 //!
 //! The user adds `AvianCollider` via the inspector. This module builds
-//! the actual `Collider` from it — handling both mesh-backed entities and
+//! the actual `Collider` from it  -- handling both mesh-backed entities and
 //! brush entities (which have `BrushMeshCache` instead of `Mesh3d`).
 //!
 //! `ColliderConstructor` is never placed on entities, so avian's

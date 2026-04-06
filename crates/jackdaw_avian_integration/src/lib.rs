@@ -106,7 +106,7 @@ pub fn register_avian_types(app: &mut App) {
     app
         // Core
         .register_type::<RigidBody>()
-        // ColliderConstructor is NOT registered — avian consumes and removes
+        // ColliderConstructor is NOT registered  -- avian consumes and removes
         // it. Users add AvianCollider instead (clean wrapper).
         .register_type::<Sensor>()
         .register_type::<AvianCollider>()
@@ -128,7 +128,7 @@ pub fn register_avian_types(app: &mut App) {
         .register_type::<RigidBodyDisabled>()
         .register_type::<Sleeping>()
         .register_type::<SleepingDisabled>()
-        // Internal avian components — registered so the inspector can display
+        // Internal avian components  -- registered so the inspector can display
         // them when added via `#[require]`. Not all have ReflectDefault, so
         // they won't appear in the component picker, only in the inspector.
         .register_type::<Position>()
