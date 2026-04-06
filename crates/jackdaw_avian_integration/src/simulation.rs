@@ -34,10 +34,10 @@ pub struct PhysicsToolState {
     pub drag: Option<PhysicsDrag>,
 }
 
-/// Active drag: holds the entity being grabbed, the plane we project the
-/// cursor onto, and the offset from that plane hit point to the entity's
-/// current position.
-#[derive(Clone, Copy)]
+/// Active drag: holds the primary entity being grabbed, the plane we project
+/// the cursor onto, and the starting positions of ALL selected entities so
+/// they move as a group.
+#[derive(Clone)]
 pub struct PhysicsDrag {
     pub entity: Entity,
     pub plane_origin: Vec3,
@@ -46,6 +46,11 @@ pub struct PhysicsDrag {
     /// the new cursor-hit each frame so the pickup point on the entity
     /// stays under the cursor.
     pub grab_offset: Vec3,
+    /// Starting position of the dragged entity at drag start.
+    pub drag_start_pos: Vec3,
+    /// Starting positions of ALL selected RigidBody entities at drag start.
+    /// Used to move the entire group by the same delta.
+    pub start_positions: HashMap<Entity, Vec3>,
 }
 
 pub struct PhysicsSimulationPlugin;

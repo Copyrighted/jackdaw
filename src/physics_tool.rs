@@ -80,17 +80,6 @@ fn enter_physics_tool(world: &mut World) {
     state.sim_active = false;
     state.drag = None;
 
-    // Log ColliderAabb values to diagnose stale-state fall-through issues
-    {
-        let mut aabb_query = world.query::<(Entity, &avian3d::prelude::ColliderAabb, &RigidBody)>();
-        for (entity, aabb, rb) in aabb_query.iter(world) {
-            info!(
-                "Physics tool entry: entity {entity} ({rb:?}) — ColliderAabb min={:?} max={:?}",
-                aabb.min, aabb.max
-            );
-        }
-    }
-
     // Snapshot all RigidBody transforms; disable non-selected Dynamic/Kinematic
     // bodies. Static bodies are NEVER disabled — they need to remain as solid
     // collision surfaces for the simulated objects to land on.
@@ -120,9 +109,11 @@ fn enter_physics_tool(world: &mut World) {
                 ec.insert(RigidBodyDisabled);
             }
         } else {
-            // Ensure selected entities are NOT disabled
+            // Ensure selected entities are NOT disabled and are awake.
+            // Removing Sleeping + zeroing isn't enough — we also need WakeBody
+            // to register the entity in avian's island system.
             if let Ok(mut ec) = world.get_entity_mut(entity) {
-                ec.remove::<RigidBodyDisabled>();
+                ec.remove::<(RigidBodyDisabled, Sleeping)>();
             }
         }
     }
@@ -225,39 +216,22 @@ fn physics_tool_drag(
         return;
     }
 
-    let Ok(window) = windows.single() else {
-        warn!("Physics drag: no single window");
-        return;
-    };
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    }; // silent — cursor off window
-    let Ok((camera, cam_tf)) = camera_query.single() else {
-        warn!("Physics drag: no single Camera3d");
-        return;
-    };
+    let Ok(window) = windows.single() else { return };
+    let Some(cursor_pos) = window.cursor_position() else { return };
+    let Ok((camera, cam_tf)) = camera_query.single() else { return };
 
     let Some(viewport_cursor) =
         crate::viewport_util::window_to_viewport_cursor(cursor_pos, camera, &viewport_query)
     else {
-        return; // cursor outside viewport — normal, don't log
-    };
-
-    let Ok(ray) = camera.viewport_to_world(cam_tf, viewport_cursor) else {
-        warn!("Physics drag: viewport_to_world failed");
         return;
     };
+
+    let Ok(ray) = camera.viewport_to_world(cam_tf, viewport_cursor) else { return };
 
     // --- Start drag ---
     if mouse.just_pressed(MouseButton::Left) && tool_state.drag.is_none() {
         let settings = MeshRayCastSettings::default().with_visibility(RayCastVisibility::Any);
         let hits = ray_cast.cast_ray(ray, &settings);
-
-        info!(
-            "Physics tool: click detected, {} raycast hits, selection has {} entities",
-            hits.len(),
-            selection.entities.len()
-        );
 
         for (hit_entity, hit_data) in hits {
             // Walk up ChildOf to find the root entity
@@ -273,14 +247,7 @@ fn physics_tool_drag(
                 }
             }
 
-            let has_rb = rb_check.contains(root);
-            let is_selected = selection.entities.contains(&root);
-            info!(
-                "Physics tool: hit entity {:?}, walked to root {:?}, has_rb={}, is_selected={}",
-                hit_entity, root, has_rb, is_selected
-            );
-
-            if !has_rb || !is_selected {
+            if !rb_check.contains(root) || !selection.entities.contains(&root) {
                 continue;
             }
 
@@ -292,11 +259,23 @@ fn physics_tool_drag(
             let plane_normal = cam_tf.forward().as_vec3();
             let grab_offset = entity_tf.translation - hit_point;
 
+            // Capture starting positions of ALL selected RigidBody entities
+            let mut start_positions = bevy::platform::collections::HashMap::default();
+            for &sel_entity in &selection.entities {
+                if rb_check.contains(sel_entity) {
+                    if let Ok(sel_tf) = transforms.get(sel_entity) {
+                        start_positions.insert(sel_entity, sel_tf.translation);
+                    }
+                }
+            }
+
             tool_state.drag = Some(PhysicsDrag {
                 entity: root,
                 plane_origin: hit_point,
                 plane_normal,
                 grab_offset,
+                drag_start_pos: entity_tf.translation,
+                start_positions,
             });
 
             // Activate simulation on first drag
@@ -310,7 +289,7 @@ fn physics_tool_drag(
     }
 
     // --- Update drag ---
-    if let Some(drag) = tool_state.drag {
+    if let Some(ref drag) = tool_state.drag {
         if mouse.pressed(MouseButton::Left) {
             // Project cursor ray onto the drag plane
             let denom = ray.direction.dot(drag.plane_normal);
@@ -318,13 +297,18 @@ fn physics_tool_drag(
                 let t = (drag.plane_origin - ray.origin).dot(drag.plane_normal) / denom;
                 if t > 0.0 {
                     let target = ray.origin + ray.direction * t + drag.grab_offset;
-                    if let Ok(mut tf) = transforms.get_mut(drag.entity) {
-                        tf.translation = target;
-                    }
-                    // Zero velocities so the entity doesn't fly off when released
-                    if let Ok((mut lv, mut av)) = velocities.get_mut(drag.entity) {
-                        lv.0 = Vec3::ZERO;
-                        av.0 = Vec3::ZERO;
+                    // Compute movement delta from the primary dragged entity
+                    let delta = target - drag.drag_start_pos;
+
+                    // Apply delta to ALL selected entities in the group
+                    for (&entity, &start_pos) in &drag.start_positions {
+                        if let Ok(mut tf) = transforms.get_mut(entity) {
+                            tf.translation = start_pos + delta;
+                        }
+                        if let Ok((mut lv, mut av)) = velocities.get_mut(entity) {
+                            lv.0 = Vec3::ZERO;
+                            av.0 = Vec3::ZERO;
+                        }
                     }
                 }
             }
